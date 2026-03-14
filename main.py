@@ -1,23 +1,30 @@
 """
-CLI Entry Point
-Runs the full AutoCAD room extraction pipeline from the command line.
+AutoCAD Room Area Extractor
+===========================
+Simple script: drop .dwg/.dxf files into the 'input' folder, run this script,
+and find Excel + CSV results in the 'output' folder.
 """
 
-import argparse
 import io
 import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 # Fix Windows console encoding
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+# Determine base directory (works for both script and frozen EXE)
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 
 # Add project root to path
-BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
 from modules.ingestion import ingest_file, cleanup_temp
@@ -26,169 +33,193 @@ from modules.matcher import match_tags_to_boundaries
 from modules.calculator import calculate_areas
 from modules.exporter import export_results
 
+# ── Directories ─────────────────────────────────────────────────────────
+INPUT_DIR = BASE_DIR / "input"
+OUTPUT_DIR = BASE_DIR / "output"
+LOG_DIR = BASE_DIR / "logs"
+CONFIG_PATH = BASE_DIR / "config.json"
+
 
 def setup_logging():
-    """Configure logging to both console and file."""
-    log_dir = BASE_DIR / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-
+    """Configure logging to file."""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         handlers=[
-            logging.FileHandler(str(log_dir / "app.log"), encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(str(LOG_DIR / "app.log"), encoding="utf-8"),
         ],
     )
 
 
-def print_status(message: str, success: bool = True):
-    """Print a status message."""
-    symbol = "[OK]" if success else "[FAIL]"
-    print(f"  {symbol} {message}")
+def load_config():
+    """Load configuration from config.json."""
+    defaults = {
+        "drawing_unit": "mm",
+        "target_layers": [],
+        "room_keywords": [
+            "room", "bedroom", "living", "kitchen", "bath", "toilet",
+            "lounge", "dining", "store", "corridor", "garage", "study", "hall"
+        ],
+        "oda_converter_path": "",
+        "output_dir": "output/",
+    }
+    try:
+        with open(CONFIG_PATH, "r") as f:
+            config = json.load(f)
+            # Merge with defaults
+            for key, val in defaults.items():
+                config.setdefault(key, val)
+            return config
+    except (FileNotFoundError, json.JSONDecodeError):
+        return defaults
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="AutoCAD Room Area Extractor — Extract room areas from DWG/DXF files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py --input drawing.dxf --unit mm
-  python main.py --input plan.dwg --unit mm --layers "A-ROOM,ROOMS" --output ./results
-  python main.py --input drawing.dxf --unit cm --layers "0"
-        """,
-    )
-    parser.add_argument(
-        "--input", "-i",
-        required=True,
-        help="Path to the input .dwg or .dxf file",
-    )
-    parser.add_argument(
-        "--unit", "-u",
-        default="mm",
-        choices=["mm", "cm", "m"],
-        help="Drawing unit (default: mm)",
-    )
-    parser.add_argument(
-        "--layers", "-l",
-        default="",
-        help='Comma-separated list of layer names to scan (default: all layers)',
-    )
-    parser.add_argument(
-        "--output", "-o",
-        default="",
-        help="Output directory (default: output/)",
-    )
-
-    args = parser.parse_args()
-
-    setup_logging()
-    logger = logging.getLogger("autocad_extractor.cli")
-
+def print_banner():
     print()
-    print("=" * 48)
+    print("=" * 52)
     print("   AutoCAD Room Area Extractor")
-    print("=" * 48)
+    print("   Drop .dwg / .dxf files into the 'input' folder")
+    print("=" * 52)
     print()
 
-    # Parse layer filter
-    target_layers = []
-    if args.layers:
-        target_layers = [l.strip() for l in args.layers.split(",") if l.strip()]
 
-    # Determine output directory
-    output_dir = args.output if args.output else str(BASE_DIR / "output")
+def process_file(filepath: Path, config: dict) -> bool:
+    """
+    Process a single .dwg/.dxf file through the full pipeline.
+    Returns True on success, False on failure.
+    """
+    filename = filepath.name
+    drawing_unit = config.get("drawing_unit", "mm")
+    target_layers = config.get("target_layers", []) or None
+
+    print(f"  Processing: {filename}")
+    print(f"  Unit: {drawing_unit} | Layers: {target_layers or 'ALL'}")
+    print()
 
     try:
-        # Step 1: Ingest file
+        # Step 1: Ingest
         print("  [1/5] Ingesting file...")
-        dxf_path = ingest_file(args.input)
-        ext = Path(args.input).suffix.lower()
+        dxf_path = ingest_file(str(filepath))
+        ext = filepath.suffix.lower()
         if ext == ".dwg":
-            print_status("DWG file converted to DXF")
+            print("  [OK]  DWG converted to DXF")
         else:
-            print_status("DXF file loaded")
+            print("  [OK]  DXF file loaded")
 
-        # Step 2: Parse DXF
+        # Step 2: Parse
         print("  [2/5] Parsing drawing layers...")
-        parse_result = parse_dxf(
-            dxf_path,
-            target_layers=target_layers if target_layers else None,
-        )
-        print_status(
-            f"{parse_result.total_polyline_entities} polyline entities scanned, "
-            f"{len(parse_result.boundaries)} closed polylines found"
-        )
-        print_status(
-            f"{parse_result.total_text_entities} text entities scanned, "
-            f"{len(parse_result.tags)} room tags found"
-        )
+        parse_result = parse_dxf(dxf_path, target_layers=target_layers)
+        print(f"  [OK]  {len(parse_result.boundaries)} closed polylines found")
+        print(f"  [OK]  {len(parse_result.tags)} room tags found")
 
         if not parse_result.boundaries:
-            print_status("No closed polylines found -- cannot extract rooms", success=False)
+            print("  [FAIL] No closed polylines found -- cannot extract rooms")
             print()
             print("  Troubleshooting:")
-            print("    - Ensure your drawing contains closed polylines (LWPOLYLINE/POLYLINE)")
-            print("    - Try specifying different layer names with --layers")
-            print("    - Check if the drawing uses blocks instead of polylines")
-            sys.exit(1)
+            print("    - Ensure your drawing has closed polylines (LWPOLYLINE/POLYLINE)")
+            print("    - Try different layer names in config.json")
+            print("    - Check if rooms are drawn as blocks (not supported)")
+            return False
 
-        # Step 3: Match tags to boundaries
+        # Step 3: Match
         print("  [3/5] Matching room tags to boundaries...")
-        matched_rooms = match_tags_to_boundaries(
-            parse_result.tags, parse_result.boundaries
-        )
-        print_status(f"{len(matched_rooms)} rooms matched")
+        matched_rooms = match_tags_to_boundaries(parse_result.tags, parse_result.boundaries)
+        print(f"  [OK]  {len(matched_rooms)} rooms matched")
 
-        # Step 4: Calculate areas
+        # Step 4: Calculate
         print("  [4/5] Calculating areas...")
-        room_data = calculate_areas(matched_rooms, drawing_unit=args.unit)
+        room_data = calculate_areas(matched_rooms, drawing_unit=drawing_unit)
         total_area = sum(r.area_sqm for r in room_data)
-        print_status(f"Total area: {round(total_area, 2)} sqm (unit: {args.unit})")
+        print(f"  [OK]  Total area: {round(total_area, 2)} sqm")
 
-        # Step 5: Export results
+        # Step 5: Export
         print("  [5/5] Exporting results...")
-        files = export_results(room_data, output_dir=output_dir)
-        print_status(f"Excel saved: {files['excel']}")
-        print_status(f"CSV saved:   {files['csv']}")
+        files = export_results(room_data, output_dir=str(OUTPUT_DIR))
+        print(f"  [OK]  Excel: {files['excel_filename']}")
+        print(f"  [OK]  CSV:   {files['csv_filename']}")
 
-        # Summary
+        # Print summary table
         print()
-        print("  -- Room Schedule " + "-" * 30)
+        print("  -- Room Schedule " + "-" * 32)
         print(f"  {'#':<4} {'Room Name':<30} {'Area (sqm)':<12} {'Perimeter (m)':<14}")
         print(f"  {'-'*4} {'-'*30} {'-'*12} {'-'*14}")
         for idx, room in enumerate(room_data, 1):
-            print(
-                f"  {idx:<4} {room.room_name:<30} {room.area_sqm:<12.2f} {room.perimeter_m:<14.2f}"
-            )
+            print(f"  {idx:<4} {room.room_name:<30} {room.area_sqm:<12.2f} {room.perimeter_m:<14.2f}")
         print(f"  {'-'*4} {'-'*30} {'-'*12} {'-'*14}")
         print(f"  {'':4} {'TOTAL':<30} {total_area:<12.2f}")
         print()
 
-        # Cleanup
-        cleanup_temp()
-        print_status("Temp files cleaned up")
-        print()
+        return True
 
-        sys.exit(0)
-
-    except FileNotFoundError as e:
-        print_status(str(e), success=False)
-        logger.error(str(e))
-        sys.exit(1)
-    except ValueError as e:
-        print_status(str(e), success=False)
-        logger.error(str(e))
-        sys.exit(1)
-    except RuntimeError as e:
-        print_status(str(e), success=False)
-        logger.error(str(e))
-        sys.exit(1)
     except Exception as e:
-        print_status(f"Unexpected error: {e}", success=False)
-        logger.exception("Unexpected error in CLI pipeline")
+        logging.getLogger("autocad_extractor").exception(f"Error processing {filename}")
+        print(f"  [FAIL] Error: {e}")
+        print()
+        return False
+
+
+def main():
+    setup_logging()
+    print_banner()
+
+    # Create directories if they don't exist
+    INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Load config
+    config = load_config()
+
+    # Find all .dwg and .dxf files in input folder
+    input_files = []
+    for ext in ("*.dwg", "*.dxf"):
+        input_files.extend(INPUT_DIR.glob(ext))
+
+    if not input_files:
+        print("  No .dwg or .dxf files found in the 'input' folder!")
+        print()
+        print(f"  Please place your drawing files in:")
+        print(f"    {INPUT_DIR}")
+        print()
+        print("  Then run this program again.")
+        print()
+        input("  Press Enter to exit...")
         sys.exit(1)
+
+    print(f"  Found {len(input_files)} file(s) to process:")
+    for f in input_files:
+        print(f"    - {f.name}")
+    print()
+    print("-" * 52)
+
+    # Process each file
+    success_count = 0
+    fail_count = 0
+
+    for filepath in input_files:
+        print()
+        result = process_file(filepath, config)
+        if result:
+            success_count += 1
+        else:
+            fail_count += 1
+        print("-" * 52)
+
+    # Cleanup temp
+    cleanup_temp()
+
+    # Final summary
+    print()
+    print("=" * 52)
+    print(f"  DONE! {success_count} file(s) processed successfully")
+    if fail_count:
+        print(f"  {fail_count} file(s) failed (check logs/app.log)")
+    print(f"  Results saved to: {OUTPUT_DIR}")
+    print("=" * 52)
+    print()
+    input("  Press Enter to exit...")
+
+    sys.exit(0 if fail_count == 0 else 1)
 
 
 if __name__ == "__main__":
