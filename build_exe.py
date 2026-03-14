@@ -1,9 +1,3 @@
-"""
-Build script — Creates a standalone EXE using PyInstaller.
-Run this from within the venv:
-    python build_exe.py
-"""
-
 import subprocess
 import sys
 import shutil
@@ -11,29 +5,28 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-
 def main():
     print("=" * 50)
-    print("  Building AutoCAD Room Extractor EXE")
+    print("  Building AutoCAD Room Extractor EXE (OneFile)")
     print("=" * 50)
     print()
 
-    # Clean previous build
-    for d in ["build", "dist"]:
+    # Clean previous build artifacts
+    for d in ["build", "dist", "AutoCAD_Room_Extractor.spec"]:
         p = BASE_DIR / d
         if p.exists():
-            shutil.rmtree(str(p))
-            print(f"  Cleaned {d}/")
+            if p.is_dir():
+                shutil.rmtree(str(p))
+            else:
+                p.unlink()
 
-    # PyInstaller command
+    # PyInstaller command for a Single-File EXE
     cmd = [
         sys.executable, "-m", "PyInstaller",
-        "--onedir",
+        "--onefile",
         "--name", "AutoCAD_Room_Extractor",
         "--noconfirm",
         "--clean",
-        "--add-data", f"config.json{os.pathsep}.",
-        "--add-data", f"modules{os.pathsep}modules",
         "--hidden-import", "ezdxf",
         "--hidden-import", "shapely",
         "--hidden-import", "openpyxl",
@@ -42,34 +35,41 @@ def main():
     ]
 
     print(f"  Running PyInstaller...")
-    print()
-
     result = subprocess.run(cmd, cwd=str(BASE_DIR))
 
     if result.returncode != 0:
-        print()
-        print("  [FAIL] Build failed! Check output above.")
+        print("\n  [FAIL] Build failed! Check output above.")
         sys.exit(1)
 
-    # Create input/output folders in dist
-    dist_dir = BASE_DIR / "dist" / "AutoCAD_Room_Extractor"
-    (dist_dir / "input").mkdir(exist_ok=True)
-    (dist_dir / "output").mkdir(exist_ok=True)
-    (dist_dir / "logs").mkdir(exist_ok=True)
+    # Move the EXE to the project root
+    exe_path = BASE_DIR / "dist" / "AutoCAD_Room_Extractor.exe"
+    target_path = BASE_DIR / "AutoCAD_Room_Extractor.exe"
+    if exe_path.exists():
+        shutil.copy2(str(exe_path), str(target_path))
+        print(f"\n  [OK] EXE moved to root: {target_path}")
 
-    # Copy config.json to dist
-    shutil.copy2(str(BASE_DIR / "config.json"), str(dist_dir / "config.json"))
+    # Ensure folders exist in root
+    for folder in ["input", "output", "logs"]:
+        (BASE_DIR / folder).mkdir(exist_ok=True)
+
+    # Clean up the dist/build folders entirely for simplicity
+    for d in ["build", "dist", "AutoCAD_Room_Extractor.spec"]:
+        p = BASE_DIR / d
+        if p.exists():
+            if p.is_dir():
+                shutil.rmtree(str(p))
+            else:
+                p.unlink()
 
     print()
     print("=" * 50)
     print("  BUILD SUCCESSFUL!")
-    print(f"  EXE location: dist/AutoCAD_Room_Extractor/")
+    print(f"  Single EXE location: {target_path}")
     print()
-    print("  To distribute to client, zip the entire")
-    print("  'AutoCAD_Room_Extractor' folder.")
+    print("  To distribute to client, just send them the")
+    print("  'AutoCAD_Room_Extractor.exe' file. It will auto-create")
+    print("  the config.json and folders when run!")
     print("=" * 50)
 
-
 if __name__ == "__main__":
-    import os
     main()

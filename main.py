@@ -56,7 +56,7 @@ def setup_logging():
 
 
 def load_config():
-    """Load configuration from config.json."""
+    """Load configuration from config.json. Create if missing."""
     defaults = {
         "drawing_unit": "mm",
         "target_layers": [],
@@ -64,17 +64,23 @@ def load_config():
             "room", "bedroom", "living", "kitchen", "bath", "toilet",
             "lounge", "dining", "store", "corridor", "garage", "study", "hall"
         ],
-        "oda_converter_path": "",
+        "oda_converter_path": "C:/Program Files/ODA/ODAFileConverter 27.1.0/ODAFileConverter.exe",
         "output_dir": "output/",
     }
     try:
-        with open(CONFIG_PATH, "r") as f:
+        if not CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(defaults, f, indent=2)
+            return defaults
+
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
             # Merge with defaults
             for key, val in defaults.items():
                 config.setdefault(key, val)
             return config
-    except (FileNotFoundError, json.JSONDecodeError):
+    except Exception as e:
+        print(f"  [WARN] Failed to read/write config.json: {e}")
         return defaults
 
 
