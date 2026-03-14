@@ -109,7 +109,11 @@ def process_file(filepath: Path, config: dict) -> bool:
     try:
         # Step 1: Ingest
         print("  [1/5] Ingesting file...")
-        dxf_path = ingest_file(str(filepath))
+        dxf_path = ingest_file(
+            str(filepath),
+            oda_converter_path=config.get("oda_converter_path", ""),
+            base_dir=BASE_DIR
+        )
         ext = filepath.suffix.lower()
         if ext == ".dwg":
             print("  [OK]  DWG converted to DXF")
@@ -215,7 +219,7 @@ def main():
         print("-" * 52)
 
     # Cleanup temp
-    cleanup_temp()
+    cleanup_temp(base_dir=BASE_DIR)
 
     # Final summary
     print()

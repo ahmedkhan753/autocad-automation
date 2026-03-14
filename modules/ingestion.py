@@ -12,38 +12,14 @@ from pathlib import Path
 
 logger = logging.getLogger("autocad_extractor.ingestion")
 
-# Base directory for the project
-BASE_DIR = Path(__file__).resolve().parent.parent
-TEMP_DIR = BASE_DIR / "temp"
-CONFIG_PATH = BASE_DIR / "config.json"
-
-
-def load_config():
-    """Load configuration from config.json."""
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.warning("config.json not found, using defaults")
-        return {
-            "drawing_unit": "mm",
-            "target_layers": [],
-            "room_keywords": [],
-            "oda_converter_path": "",
-            "output_dir": "output/",
-        }
-    except json.JSONDecodeError as e:
-        logger.error(f"Invalid config.json: {e}")
-        raise ValueError(f"Configuration file is malformed: {e}")
-
-
-def ensure_temp_dir():
+def ensure_temp_dir(base_dir: Path):
     """Create temp directory if it doesn't exist."""
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    return TEMP_DIR
+    temp_dir = base_dir / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    return temp_dir
 
 
-def ingest_file(filepath: str) -> str:
+def ingest_file(filepath: str, oda_converter_path: str = "", base_dir: Path = None) -> str:
     """
     Ingest a .dwg or .dxf file and return the path to a valid .dxf file.
 
@@ -52,6 +28,8 @@ def ingest_file(filepath: str) -> str:
 
     Args:
         filepath: Path to the input .dwg or .dxf file
+        oda_converter_path: Path to the ODA File Converter executable
+        base_dir: The base directory for creating the temp folder
 
     Returns:
         Path to the .dxf file ready for parsing
@@ -61,40 +39,43 @@ def ingest_file(filepath: str) -> str:
         ValueError: If file has unsupported extension
         RuntimeError: If DWG conversion fails
     """
-    filepath = Path(filepath).resolve()
+    path_obj = Path(filepath).resolve()
 
     # Validate file exists
-    if not filepath.exists():
-        raise FileNotFoundError(f"Input file not found: {filepath}")
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Input file not found: {path_obj}")
 
     # Validate extension
-    ext = filepath.suffix.lower()
+    ext = path_obj.suffix.lower()
     if ext not in (".dwg", ".dxf"):
         raise ValueError(
             f"Unsupported file type '{ext}'. Only .dwg and .dxf files are accepted."
         )
 
-    temp_dir = ensure_temp_dir()
+    if base_dir is None:
+        base_dir = Path.cwd()
+    temp_dir = ensure_temp_dir(base_dir)
 
     if ext == ".dxf":
         # Copy DXF directly to temp directory
-        dest = temp_dir / filepath.name
-        shutil.copy2(str(filepath), str(dest))
+        dest = temp_dir / path_obj.name
+        shutil.copy2(str(path_obj), str(dest))
         logger.info(f"DXF file copied to temp: {dest}")
         return str(dest)
 
     # DWG file — needs conversion
-    logger.info(f"DWG file detected, attempting conversion: {filepath}")
-    return _convert_dwg_to_dxf(filepath, temp_dir)
+    logger.info(f"DWG file detected, attempting conversion: {path_obj}")
+    return _convert_dwg_to_dxf(path_obj, temp_dir, oda_converter_path)
 
 
-def _convert_dwg_to_dxf(dwg_path: Path, temp_dir: Path) -> str:
+def _convert_dwg_to_dxf(dwg_path: Path, temp_dir: Path, oda_path: str) -> str:
     """
     Convert a .dwg file to .dxf using ODA File Converter or LibreDWG.
 
     Args:
         dwg_path: Path to the input .dwg file
         temp_dir: Directory to store the converted .dxf file
+        oda_path: Path to the ODA File Converter executable
 
     Returns:
         Path to the converted .dxf file
@@ -102,9 +83,6 @@ def _convert_dwg_to_dxf(dwg_path: Path, temp_dir: Path) -> str:
     Raises:
         RuntimeError: If conversion fails
     """
-    config = load_config()
-    oda_path = config.get("oda_converter_path", "")
-
     # Try ODA File Converter first
     if oda_path and os.path.exists(oda_path):
         return _convert_with_oda(dwg_path, temp_dir, oda_path)
@@ -234,12 +212,15 @@ def _convert_with_libredwg(dwg_path: Path, temp_dir: Path) -> str:
         )
 
 
-def cleanup_temp():
+def cleanup_temp(base_dir: Path | None = None):
     """Remove all files in the temp directory."""
     try:
-        if TEMP_DIR.exists():
-            shutil.rmtree(str(TEMP_DIR))
-            TEMP_DIR.mkdir(parents=True, exist_ok=True)
+        if base_dir is None:
+            base_dir = Path.cwd()
+        temp_dir = base_dir / "temp"
+        if temp_dir.exists():
+            shutil.rmtree(str(temp_dir))
+            temp_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Temp directory cleaned")
     except OSError as e:
         logger.warning(f"Failed to clean temp directory: {e}")
