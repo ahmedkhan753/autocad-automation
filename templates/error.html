@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error — AutoCAD Room Extractor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M3 9h18M9 3v18"/>
+                </svg>
+                <h1>AutoCAD Room Extractor</h1>
+            </div>
+        </header>
+
+        <!-- Error Card -->
+        <div class="card error-card">
+            <div class="error-header">
+                <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                <h2>{{ error_title }}</h2>
+            </div>
+            
+            <p class="error-message">{{ error_message }}</p>
+
+            {% if hints %}
+            <div class="hints-section">
+                <h3>Troubleshooting</h3>
+                <ul class="hints-list">
+                    {% for hint in hints %}
+                    <li>{{ hint }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
+            <div class="error-actions">
+                <a href="{{ url_for('index') }}" class="btn-primary">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                        <line x1="19" y1="12" x2="5" y2="12"/>
+                        <polyline points="12 19 5 12 12 5"/>
+                    </svg>
+                    <span>Try Again</span>
+                </a>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>AutoCAD Room Extractor &bull; Built with ezdxf, Shapely &amp; Flask</p>
+        </footer>
+    </div>
+</body>
+</html>

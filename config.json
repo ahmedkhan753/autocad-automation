@@ -1,0 +1,21 @@
+{
+  "drawing_unit": "mm",
+  "target_layers": [],
+  "room_keywords": [
+    "room",
+    "bedroom",
+    "living",
+    "kitchen",
+    "bath",
+    "toilet",
+    "lounge",
+    "dining",
+    "store",
+    "corridor",
+    "garage",
+    "study",
+    "hall"
+  ],
+  "oda_converter_path": "",
+  "output_dir": "output/"
+}

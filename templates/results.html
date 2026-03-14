@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results — AutoCAD Room Extractor</title>
+    <meta name="description" content="Room area extraction results">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <path d="M3 9h18M9 3v18"/>
+                </svg>
+                <h1>Extraction Results</h1>
+            </div>
+            <p class="subtitle">{{ data.filename }} — {{ data.total_rooms }} rooms found</p>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">{{ data.total_rooms }}</div>
+                <div class="stat-label">Rooms Found</div>
+            </div>
+            <div class="stat-card accent">
+                <div class="stat-value">{{ data.total_area }}</div>
+                <div class="stat-label">Total Area (sqm)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ data.total_perimeter }}</div>
+                <div class="stat-label">Total Perimeter (m)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ data.drawing_unit }}</div>
+                <div class="stat-label">Drawing Unit</div>
+            </div>
+        </div>
+
+        <!-- Parsing Info -->
+        <div class="card parsing-info">
+            <div class="parsing-detail">
+                <span class="parsing-label">Text entities scanned:</span>
+                <span class="parsing-value">{{ data.text_scanned }}</span>
+            </div>
+            <div class="parsing-detail">
+                <span class="parsing-label">Room tags matched:</span>
+                <span class="parsing-value">{{ data.tags_found }}</span>
+            </div>
+            <div class="parsing-detail">
+                <span class="parsing-label">Polylines scanned:</span>
+                <span class="parsing-value">{{ data.polylines_scanned }}</span>
+            </div>
+            <div class="parsing-detail">
+                <span class="parsing-label">Closed boundaries:</span>
+                <span class="parsing-value">{{ data.polylines_found }}</span>
+            </div>
+        </div>
+
+        <!-- Room Table -->
+        <div class="card table-card">
+            <h2 class="card-title">Room Schedule</h2>
+            <div class="table-wrapper">
+                <table class="results-table" id="roomTable">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Room Name</th>
+                            <th class="num">Area (sqm)</th>
+                            <th class="num">Perimeter (m)</th>
+                            <th>Layer</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for room in data.rooms %}
+                        <tr>
+                            <td>{{ room.index }}</td>
+                            <td class="room-name">{{ room.name }}</td>
+                            <td class="num">{{ "%.2f"|format(room.area_sqm) }}</td>
+                            <td class="num">{{ "%.2f"|format(room.perimeter_m) }}</td>
+                            <td><span class="layer-badge">{{ room.layer }}</span></td>
+                            <td class="notes">{{ room.notes }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="total-row">
+                            <td></td>
+                            <td><strong>TOTAL</strong></td>
+                            <td class="num"><strong>{{ "%.2f"|format(data.total_area) }}</strong></td>
+                            <td class="num"><strong>{{ "%.2f"|format(data.total_perimeter) }}</strong></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Download Buttons -->
+        <div class="download-section">
+            <a href="{{ url_for('download', filetype='excel') }}" class="btn-download excel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Download Excel (.xlsx)</span>
+            </a>
+            <a href="{{ url_for('download', filetype='csv') }}" class="btn-download csv">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span>Download CSV (.csv)</span>
+            </a>
+        </div>
+
+        <!-- Back Button -->
+        <div class="back-section">
+            <a href="{{ url_for('index') }}" class="btn-back">
+                ← Process Another File
+            </a>
+        </div>
+
+        <footer class="footer">
+            <p>AutoCAD Room Extractor &bull; Built with ezdxf, Shapely &amp; Flask</p>
+        </footer>
+    </div>
+</body>
+</html>
