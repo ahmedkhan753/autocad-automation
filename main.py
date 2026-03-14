@@ -13,19 +13,22 @@ import sys
 import time
 from pathlib import Path
 
-# Fix Windows console encoding
+# Fix Windows console encoding (use try/except in case sys.stdout is not ready)
 if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Determine base directory (works for both script and frozen EXE)
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parent
 else:
     BASE_DIR = Path(__file__).resolve().parent
-
-# Add project root to path
-sys.path.insert(0, str(BASE_DIR))
+    # Add project root to path only for local execution
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
 
 from modules.ingestion import ingest_file, cleanup_temp
 from modules.parser import parse_dxf
